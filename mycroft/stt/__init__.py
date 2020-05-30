@@ -547,6 +547,96 @@ class GoVivaceSTT(TokenSTT):
         return response.json()["result"]["hypotheses"][0]["transcript"]
 
 
+class CPqDSTT(STT):
+    """
+        Simple REST method for recogntion:
+        speechweb.cpqd.com.br/asr/docs/latest/api_rest/methods.html
+        The STT config will look like this:
+
+        "stt": {
+            "module": "cpqd",
+            "cpqd": {
+                "url": "http://127.0.0.1:8025/asr-server/rest/recognize"
+                "lm.uri": "builtin:slm/general"
+            }
+        }
+    """
+    def __init__(self):
+        super(CPqDSTT, self).__init__()
+
+    def execute(self, audio, language=None):
+        url = self.config.get('url')
+        params = self.config.get('lm.uri')
+        headers = {"Content-Type": "audio/raw"}
+        response = post(url, headers=headers,
+                        data=audio.get_raw_data(
+                             convert_rate=16000,
+                             convert_width=2),
+                        params=params)
+        if response.status_code == 200:
+            result = json.loads(response.content)
+            return result[0]['alternatives'][0]['text']
+        else:
+            raise Exception(
+                'Request to CPqD-ASR Server failed. Code: {} Body: {}'.format(
+                    response.status_code, response.text))
+
+
+class CPqDStreamThread(StreamThread):
+    def __init__(self, queue, lang, url, lm_list):
+        super().__init__(queue, lang)
+        self.url = url
+        self.lm_list = lm_list
+
+    def handle_audio_stream(self, audio, language):
+        buffer = BufferAudioSource()
+        asr = SpeechRecognizer(self.url, max_wait_seconds=300)
+        asr.recognize(buffer, self.lm_list)
+        for d in audio:
+            buffer.write(d)
+        buffer.finish()
+        r = asr.wait_recognition_result()[0]
+        self.text = r.alternatives[0].text
+        return self.text
+
+
+class CPqDStreamingSTT(StreamingSTT):
+    """
+        Streaming STT interface for CPqD Speech-To-Text
+        To use github to install https://github.com/CPqD/asr-sdk-python.git
+        and add configuration to local mycroft.conf file. The STT config
+        will look like this:
+
+        "stt": {
+            "module": "cpqd_streaming",
+            "cpqd_streaming": {
+                "url": "ws://localhost:8025/asr-server/asr"
+                "lm.uri": "builtin:slm/general"
+            }
+        }
+    """
+
+    def __init__(self):
+        global SpeechRecognizer, BufferAudioSource, LanguageModelList
+        from cpqdasr import \
+            SpeechRecognizer, BufferAudioSource, LanguageModelList
+
+        super(CPqDStreamingSTT, self).__init__()
+        self.url = self.config.get('url')
+        self.language = self.config.get('lang') or self.lang
+        self.lm_list = LanguageModelList(self.config.get('lm.uri'))
+        LOG.debug("CPqDStreamingSTT: {}".format(self.url))
+
+    def create_streaming_thread(self):
+        self.queue = Queue()
+        return CPqDStreamThread(
+            self.queue,
+            self.language,
+            self.url,
+            self.lm_list,
+        )
+
+
 class STTFactory:
     CLASSES = {
         "mycroft": MycroftSTT,
@@ -562,7 +652,9 @@ class STTFactory:
         "deepspeech_server": DeepSpeechServerSTT,
         "deepspeech_stream_server": DeepSpeechStreamServerSTT,
         "mycroft_deepspeech": MycroftDeepSpeechSTT,
-        "yandex": YandexSTT
+        "yandex": YandexSTT,
+        "cpqd": CPqDSTT,
+        "cpqd_streaming": CPqDStreamingSTT
     }
 
     @staticmethod
