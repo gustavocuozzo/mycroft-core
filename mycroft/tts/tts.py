@@ -478,6 +478,7 @@ class TTSFactory:
     from mycroft.tts.yandex_tts import YandexTTS
     from mycroft.tts.dummy_tts import DummyTTS
     from mycroft.tts.polly_tts import PollyTTS
+    from mycroft.tts.cpqd_tts import CPqDTTS
 
     CLASSES = {
         "mimic": Mimic,
@@ -492,6 +493,7 @@ class TTSFactory:
         "responsive_voice": ResponsiveVoice,
         "yandex": YandexTTS,
         "polly": PollyTTS,
+        "cpqd": CPqDTTS,
         "dummy": DummyTTS
     }
 
